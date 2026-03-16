@@ -51,7 +51,7 @@ if swapon --show | grep -q /swapfile 2>/dev/null; then
 else
     fallocate -l 512M /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=512 status=none
     chmod 600 /swapfile
-    mkswap /swapfile -q
+    mkswap /swapfile
     swapon /swapfile
     # Make permanent
     if ! grep -q /swapfile /etc/fstab; then
