@@ -35,7 +35,7 @@ Open your domain and add upstream providers (Groq, Together, OpenRouter, Ollama)
 ### 4. Point your client
 
 ```bash
-export ANTHROPIC_BASE_URL=https://router.yourdomain.com/v1
+export ANTHROPIC_BASE_URL=https://router.yourdomain.com
 export ANTHROPIC_AUTH_TOKEN=sk-ant-router-...
 export ANTHROPIC_API_KEY=""
 ```

@@ -488,10 +488,9 @@ async def api_config(request: Request):
         return guard
     domain = os.getenv("CLOUDFLARE_DOMAIN", "").strip()
     if domain:
-        endpoint = f"https://{domain}/v1"
+        endpoint = f"https://{domain}"
     else:
-        # Fallback: derive from the request's own URL (works via SSH tunnel too)
-        endpoint = str(request.base_url).rstrip("/") + "/v1"
+        endpoint = str(request.base_url).rstrip("/")
     return {"endpoint": endpoint, "domain": domain}
 
 

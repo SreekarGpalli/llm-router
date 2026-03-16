@@ -337,7 +337,7 @@ echo -e "${RED}${BOLD}  │                                                     
 echo -e "${RED}${BOLD}  └─────────────────────────────────────────────────────────┘${NC}"
 echo ""
 echo -e "  ${BOLD}Claude Code setup:${NC}"
-echo -e "    export ANTHROPIC_BASE_URL=https://$CF_DOMAIN/v1"
+echo -e "    export ANTHROPIC_BASE_URL=https://$CF_DOMAIN"
 echo -e "    export ANTHROPIC_AUTH_TOKEN=$VIRTUAL_KEY"
 echo -e "    export ANTHROPIC_API_KEY=\"\""
 echo ""
