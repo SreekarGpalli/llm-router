@@ -1,0 +1,30 @@
+[Unit]
+Description=Cloudflare Tunnel — exposes LLM Router at router.yourdomain.com
+After=network-online.target
+Wants=network-online.target
+# Start after the router is up so initial requests don't 502
+After=llm-router.service
+
+[Service]
+Type=simple
+User=llmrouter
+Group=llmrouter
+ExecStart=/usr/local/bin/cloudflared tunnel \
+    --config /opt/llm-router/cloudflared/config.yml \
+    run
+
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/llm-router/cloudflared
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared
+
+[Install]
+WantedBy=multi-user.target

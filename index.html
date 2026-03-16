@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LLM Router</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--s2:#21262d;--border:#30363d;
+  --text:#c9d1d9;--muted:#8b949e;--accent:#58a6ff;
+  --green:#3fb950;--red:#f85149;--yellow:#d29922;--r:8px
+}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:.9rem}
+button{cursor:pointer;border:none;border-radius:var(--r);font-size:.83rem;font-weight:600;padding:7px 13px;transition:opacity .15s,background .15s}
+button:hover{opacity:.85} button:disabled{opacity:.45;cursor:not-allowed}
+.btn-p{background:var(--green);color:#fff}
+.btn-d{background:var(--red);color:#fff}
+.btn-g{background:var(--s2);color:var(--text);border:1px solid var(--border)}
+.btn-a{background:rgba(88,166,255,.12);color:var(--accent);border:1px solid rgba(88,166,255,.3)}
+.btn-sm{padding:4px 9px;font-size:.78rem}
+input,select{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);
+  color:var(--text);padding:8px 10px;font-size:.875rem;width:100%;outline:none;transition:border .15s}
+input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(88,166,255,.12)}
+input[type=checkbox]{width:auto;accent-color:var(--accent)}
+code{font-family:ui-monospace,monospace;font-size:.85em;background:var(--s2);
+     border:1px solid var(--border);border-radius:4px;padding:1px 5px}
+
+/* Layout */
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;
+  display:flex;align-items:center;height:52px;gap:12px;position:sticky;top:0;z-index:10}
+.logo{font-weight:700;font-size:1rem;color:#fff;display:flex;align-items:center;gap:7px}
+.spacer{flex:1}
+.pill{background:var(--s2);border:1px solid var(--border);border-radius:20px;
+  padding:3px 11px;font-size:.77rem;color:var(--muted)}
+.pill span{color:var(--text);font-weight:600}
+main{max-width:940px;margin:28px auto;padding:0 18px}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px;margin-bottom:18px}
+.card-title{font-size:.95rem;font-weight:600;color:#fff;margin-bottom:14px;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* Setup card */
+.setup-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:640px){.setup-grid{grid-template-columns:1fr}}
+.setup-block{background:var(--s2);border:1px solid var(--border);border-radius:var(--r);padding:14px}
+.setup-label{font-size:.72rem;font-weight:600;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.06em;margin-bottom:6px}
+.setup-val{font-family:ui-monospace,monospace;font-size:.82rem;color:var(--accent);
+  word-break:break-all;margin-bottom:8px;min-height:1.2em}
+.setup-actions{display:flex;gap:6px;flex-wrap:wrap}
+.setup-copy{margin-top:12px;padding:10px 14px;background:var(--bg);border:1px dashed var(--border);
+  border-radius:var(--r);font-family:ui-monospace,monospace;font-size:.78rem;
+  color:var(--muted);white-space:pre-wrap;word-break:break-all}
+
+/* Provider list */
+.prov-grid{display:grid;gap:12px}
+.prov-card{background:var(--s2);border:1px solid var(--border);border-radius:10px;
+  padding:14px 16px;display:flex;align-items:center;gap:12px}
+.prov-card.disabled{opacity:.5}
+.prov-info{flex:1;min-width:0}
+.prov-name{font-weight:600;color:#fff;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prov-url{font-size:.77rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+.prov-meta{font-size:.74rem;color:var(--muted)}
+.prov-actions{display:flex;gap:7px;align-items:center;flex-shrink:0}
+.toggle{position:relative;display:inline-block;width:34px;height:18px}
+.toggle input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;background:var(--border);border-radius:20px;cursor:pointer;transition:.2s}
+.slider:before{content:'';position:absolute;width:12px;height:12px;left:3px;bottom:3px;
+  background:#fff;border-radius:50%;transition:.2s}
+.toggle input:checked+.slider{background:var(--green)}
+.toggle input:checked+.slider:before{transform:translateX(16px)}
+.empty{text-align:center;padding:40px 20px;color:var(--muted)}
+
+/* Modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;display:flex;
+  align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto}
+.overlay.hidden{display:none}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  width:100%;max-width:700px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.mhdr{display:flex;align-items:center;justify-content:space-between;
+  padding:18px 22px;border-bottom:1px solid var(--border)}
+.mhdr h2{font-size:.95rem;font-weight:600;color:#fff}
+.mclose{background:none;color:var(--muted);font-size:1.3rem;padding:0 5px;font-weight:300}
+.mbody{padding:20px 22px;max-height:72vh;overflow-y:auto}
+.mfoot{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+
+/* Form */
+.fg{margin-bottom:14px}
+.fl{display:block;font-size:.76rem;font-weight:600;color:var(--muted);
+  margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em}
+.fhint{font-size:.74rem;color:var(--muted);margin-top:3px}
+.fsep{border:none;border-top:1px solid var(--border);margin:18px 0}
+.frow{display:flex;gap:8px;align-items:flex-end}
+.frow>*:first-child{flex:1}
+
+/* Connection status */
+.conn-status{margin-top:8px;padding:8px 12px;border-radius:var(--r);font-size:.82rem;
+  display:none;align-items:center;gap:6px}
+.conn-status.ok{display:flex;background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.3);color:var(--green)}
+.conn-status.fail{display:flex;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--red)}
+
+/* Model picker */
+.model-picker{margin-top:12px;background:var(--s2);border:1px solid var(--border);
+  border-radius:var(--r);padding:14px;display:none}
+.model-list{max-height:180px;overflow-y:auto;margin:10px 0;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px}
+.model-item{display:flex;align-items:center;gap:6px;padding:4px 6px;
+  border-radius:5px;cursor:pointer;font-size:.82rem}
+.model-item:hover{background:var(--border)}
+.model-item input{width:auto;margin:0}
+.picker-actions{display:flex;gap:8px;margin-top:10px}
+.picker-count{font-size:.78rem;color:var(--muted);margin-top:6px}
+
+/* Alias table */
+.at{width:100%;border-collapse:collapse}
+.at th{text-align:left;font-size:.72rem;font-weight:600;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.05em;padding:0 5px 7px}
+.at td{padding:3px 5px;vertical-align:middle}
+.at td:nth-child(3){width:50px;text-align:center}
+.at td:last-child{width:32px;text-align:center}
+.rm{background:none;color:var(--muted);font-size:1.1rem;padding:0 5px;line-height:1}
+.rm:hover{color:var(--red)}
+.add-row{margin-top:9px;background:none;color:var(--accent);font-size:.8rem;
+  padding:3px 0;font-weight:600;border:none;cursor:pointer}
+.add-row:hover{opacity:.8}
+
+/* Key overlay */
+.key-overlay-box{background:var(--surface);border:1px solid var(--green);border-radius:12px;
+  padding:28px;max-width:520px;text-align:center}
+.key-overlay-box h3{color:var(--green);margin-bottom:10px}
+.new-key{font-family:ui-monospace,monospace;font-size:.85rem;word-break:break-all;
+  background:var(--s2);border:1px solid var(--border);border-radius:var(--r);
+  padding:12px;margin:10px 0;color:var(--accent)}
+.key-warn{font-size:.8rem;color:var(--muted);margin-bottom:14px}
+
+/* Toast */
+#toast{position:fixed;bottom:22px;right:22px;background:var(--s2);border:1px solid var(--border);
+  border-radius:var(--r);padding:11px 16px;font-size:.83rem;z-index:300;
+  transition:opacity .25s;opacity:0;pointer-events:none;max-width:300px}
+#toast.show{opacity:1}
+#toast.ok{border-color:var(--green);color:var(--green)}
+#toast.err{border-color:var(--red);color:var(--red)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⇌ LLM Router</div>
+  <div class="spacer"></div>
+  <div class="pill"><span id="sp">0</span> providers</div>
+  <div class="pill"><span id="sa">0</span> aliases</div>
+  <a href="/logout"><button class="btn-g btn-sm">Sign out</button></a>
+</header>
+
+<main>
+
+<!-- ── Setup card ───────────────────────────────────────────────────────────── -->
+<div class="card">
+  <div class="card-title">🔌 Claude Code / SDK Setup</div>
+  <div class="setup-grid">
+
+    <div class="setup-block">
+      <div class="setup-label">ANTHROPIC_BASE_URL</div>
+      <div class="setup-val" id="endpoint-val">loading…</div>
+      <div class="setup-actions">
+        <button class="btn-a btn-sm" onclick="copyEndpoint()">⎘ Copy URL</button>
+      </div>
+    </div>
+
+    <div class="setup-block">
+      <div class="setup-label">ANTHROPIC_API_KEY</div>
+      <div class="setup-val" id="key-val" style="color:var(--muted)">loading…</div>
+      <div class="setup-actions">
+        <button class="btn-a btn-sm" onclick="copyKey()" id="btn-copy-key">⎘ Copy Key</button>
+        <button class="btn-g btn-sm" onclick="confirmRegen()">↺ Regenerate</button>
+      </div>
+    </div>
+
+  </div>
+  <div class="setup-copy" id="export-block" onclick="copyExport()" title="Click to copy export statements" style="cursor:pointer">
+    loading…
+  </div>
+  <div style="font-size:.75rem;color:var(--muted);margin-top:6px">
+    ↑ Click to copy both as <code>export</code> statements for your shell.
+    Set <code>ANTHROPIC_BASE_URL</code> and <code>ANTHROPIC_API_KEY</code> before running <code>claude</code>.
+  </div>
+</div>
+
+<!-- ── Providers card ───────────────────────────────────────────────────────── -->
+<div class="card">
+  <div class="card-title">
+    Upstream Providers
+    <button class="btn-p btn-sm" style="margin-left:auto" onclick="openModal()">+ Add Provider</button>
+  </div>
+  <div class="prov-grid" id="prov-grid">
+    <div class="empty"><div style="font-size:2.5rem;margin-bottom:10px">🔌</div>No providers yet — add one above.</div>
+  </div>
+</div>
+
+</main>
+
+<!-- ── Provider modal ───────────────────────────────────────────────────────── -->
+<div class="overlay hidden" id="modal" onclick="overlayClick(event)">
+  <div class="modal" id="modal-box">
+    <div class="mhdr">
+      <h2 id="modal-title">Add Provider</h2>
+      <button class="mclose" onclick="closeModal()">×</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="eid">
+
+      <div style="font-size:.78rem;color:var(--muted);padding:8px 12px;background:var(--s2);
+           border:1px solid var(--border);border-radius:var(--r);margin-bottom:16px">
+        <strong style="color:var(--text)">§1 Provider</strong> — connection details
+      </div>
+
+      <div class="fg">
+        <label class="fl">Nickname *</label>
+        <input id="f-nick" placeholder="Groq Production">
+      </div>
+
+      <div class="fg">
+        <label class="fl">Upstream Base URL *</label>
+        <div class="frow">
+          <input id="f-url" placeholder="https://api.groq.com/openai/v1">
+          <button class="btn-g btn-sm" id="btn-test" onclick="testConn()" style="white-space:nowrap">Test</button>
+        </div>
+        <div class="fhint">The router appends <code>/chat/completions</code> to this URL</div>
+        <div class="conn-status" id="conn-status"></div>
+      </div>
+
+      <div class="fg">
+        <label class="fl">API Key</label>
+        <input id="f-key" type="password" placeholder="sk-...  (leave blank to keep existing on edit)">
+        <div class="fhint">Stored Fernet-encrypted. Leave blank when editing to keep the current key.</div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+        <button class="btn-a btn-sm" id="btn-fetch" onclick="fetchModels()">↓ Fetch Models from API</button>
+        <span id="fetch-hint" style="font-size:.76rem;color:var(--muted);align-self:center"></span>
+      </div>
+
+      <!-- Model picker (shown after fetch) -->
+      <div class="model-picker" id="model-picker">
+        <div style="font-size:.82rem;font-weight:600;color:var(--text);margin-bottom:6px">
+          Select models to add as aliases
+          <span style="font-weight:400;color:var(--muted)"> — Anthropic name defaults to upstream name (edit to rename)</span>
+        </div>
+        <div class="model-list" id="model-list"></div>
+        <div class="picker-count" id="picker-count"></div>
+        <div class="picker-actions">
+          <button class="btn-p btn-sm" onclick="addSelected()">Add Selected as Aliases</button>
+          <button class="btn-g btn-sm" onclick="document.getElementById('model-picker').style.display='none'">Cancel</button>
+        </div>
+      </div>
+
+      <hr class="fsep">
+
+      <div style="font-size:.78rem;color:var(--muted);padding:8px 12px;background:var(--s2);
+           border:1px solid var(--border);border-radius:var(--r);margin-bottom:14px">
+        <strong style="color:var(--text)">§2 Model Aliases</strong> — what name your client sends → what name the upstream receives
+      </div>
+
+      <table class="at">
+        <thead><tr>
+          <th>Anthropic / Client Name</th>
+          <th>Upstream Model Name</th>
+          <th>Default</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="alias-tbody"></tbody>
+      </table>
+      <button class="add-row" onclick="addAliasRow()">+ Add row manually</button>
+
+    </div>
+    <div class="mfoot">
+      <button class="btn-g" onclick="closeModal()">Cancel</button>
+      <button class="btn-p" onclick="saveProvider()">Save Provider</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── New key overlay ──────────────────────────────────────────────────────── -->
+<div class="overlay hidden" id="key-overlay">
+  <div class="key-overlay-box">
+    <h3>🔑 New API Key Generated</h3>
+    <div class="new-key" id="new-key-val"></div>
+    <div class="key-warn">Copy this key now — it is also stored encrypted and visible in the dashboard.</div>
+    <button class="btn-p" onclick="copyNewKey()">⎘ Copy Key</button>
+    &nbsp;
+    <button class="btn-g" onclick="dismissNewKey()">Done</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── API helper ────────────────────────────────────────────────────────────────
+const api = (url, opts = {}) =>
+  fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts })
+    .then(r => r.json().catch(() => ({ error: `HTTP ${r.status}` })));
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let _tt;
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(_tt);
+  _tt = setTimeout(() => (el.className = ''), 3000);
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let _endpoint = '';
+let _apiKey = '';
+let _fetchedModels = [];   // models returned by last "Fetch Models" call
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  await Promise.all([loadConfig(), loadKey(), loadStats(), loadProviders()]);
+}
+
+async function loadConfig() {
+  const c = await api('/api/config');
+  _endpoint = c.endpoint || (window.location.origin + '/v1');
+  document.getElementById('endpoint-val').textContent = _endpoint;
+  updateExportBlock();
+}
+
+async function loadKey() {
+  const r = await api('/api/key/current');
+  if (r.key) {
+    _apiKey = r.key;
+    document.getElementById('key-val').textContent = r.key;
+    document.getElementById('key-val').style.color = 'var(--accent)';
+  } else {
+    document.getElementById('key-val').textContent = '⚠ Key hash only — click Regenerate to get a displayable key';
+    document.getElementById('key-val').style.color = 'var(--yellow)';
+  }
+  updateExportBlock();
+}
+
+function updateExportBlock() {
+  const key = _apiKey || '<your-api-key>';
+  const ep = _endpoint || '<endpoint>';
+  document.getElementById('export-block').textContent =
+    `export ANTHROPIC_BASE_URL=${ep}\nexport ANTHROPIC_API_KEY=${key}`;
+}
+
+async function loadStats() {
+  const s = await api('/api/stats');
+  document.getElementById('sp').textContent = s.providers;
+  document.getElementById('sa').textContent = s.aliases;
+}
+
+async function loadProviders() {
+  const ps = await api('/api/providers');
+  const grid = document.getElementById('prov-grid');
+  if (!Array.isArray(ps) || !ps.length) {
+    grid.innerHTML = '<div class="empty"><div style="font-size:2.5rem;margin-bottom:10px">🔌</div>No providers yet.</div>';
+    return;
+  }
+  grid.innerHTML = ps.map(p => `
+    <div class="prov-card ${p.enabled ? '' : 'disabled'}" id="pc-${p.id}">
+      <div class="prov-info">
+        <div class="prov-name">${esc(p.nickname)}</div>
+        <div class="prov-url">${esc(p.base_url)}</div>
+        <div class="prov-meta">${p.alias_count} alias${p.alias_count === 1 ? '' : 'es'}
+          ${p.enabled ? '' : ' · <span style="color:var(--yellow)">disabled</span>'}
+        </div>
+      </div>
+      <div class="prov-actions">
+        <label class="toggle" title="${p.enabled ? 'Disable' : 'Enable'} provider">
+          <input type="checkbox" ${p.enabled ? 'checked' : ''} onchange="toggleProv(${p.id},this.checked)">
+          <span class="slider"></span>
+        </label>
+        <button class="btn-g btn-sm" onclick="editProv(${p.id})">Edit</button>
+        <button class="btn-d btn-sm" onclick="delProv(${p.id},'${esc(p.nickname)}')">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function refresh() {
+  await Promise.all([loadStats(), loadProviders()]);
+}
+
+// ── Copy helpers ──────────────────────────────────────────────────────────────
+function copyEndpoint() {
+  navigator.clipboard.writeText(_endpoint).then(() => toast('Endpoint URL copied!'));
+}
+function copyKey() {
+  if (!_apiKey) { toast('No key to copy — click Regenerate', 'err'); return; }
+  navigator.clipboard.writeText(_apiKey).then(() => toast('API key copied!'));
+}
+function copyExport() {
+  const text = document.getElementById('export-block').textContent;
+  navigator.clipboard.writeText(text).then(() => toast('Export block copied!'));
+}
+
+// ── Provider toggle / delete ──────────────────────────────────────────────────
+async function toggleProv(id, enabled) {
+  await api(`/api/providers/${id}/toggle`, { method: 'POST', body: JSON.stringify({ enabled }) });
+  document.getElementById(`pc-${id}`)?.classList.toggle('disabled', !enabled);
+  await loadStats();
+  toast(enabled ? 'Provider enabled' : 'Provider disabled');
+}
+
+async function delProv(id, name) {
+  if (!confirm(`Delete provider "${name}"? All its aliases will be removed.`)) return;
+  const r = await api(`/api/providers/${id}`, { method: 'DELETE' });
+  if (r.message) { toast('Provider deleted'); refresh(); }
+  else toast(r.error || r.detail || 'Delete failed', 'err');
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function openModal(p = null) {
+  _fetchedModels = [];
+  document.getElementById('eid').value = p ? p.id : '';
+  document.getElementById('modal-title').textContent = p ? 'Edit Provider' : 'Add Provider';
+  document.getElementById('f-nick').value = p ? p.nickname : '';
+  document.getElementById('f-url').value = p ? p.base_url : '';
+  document.getElementById('f-key').value = '';
+  document.getElementById('f-key').placeholder = p
+    ? 'Leave blank to keep existing key'
+    : 'sk-...  (required for most providers)';
+  document.getElementById('conn-status').className = 'conn-status';
+  document.getElementById('model-picker').style.display = 'none';
+  document.getElementById('fetch-hint').textContent = '';
+
+  const tbody = document.getElementById('alias-tbody');
+  tbody.innerHTML = '';
+  if (p && p.aliases && p.aliases.length) {
+    p.aliases.forEach(a => addAliasRow(a.anthropic_name, a.upstream_name, !!a.is_default));
+  } else {
+    addAliasRow();
+  }
+
+  document.getElementById('modal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('f-nick').focus(), 50);
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+}
+
+function overlayClick(e) {
+  if (e.target === document.getElementById('modal')) closeModal();
+}
+
+async function editProv(id) {
+  const p = await api(`/api/providers/${id}`);
+  if (p.error || p.detail) { toast(p.error || p.detail, 'err'); return; }
+  openModal(p);
+}
+
+// ── Alias rows ────────────────────────────────────────────────────────────────
+function addAliasRow(aName = '', uName = '', isDef = false) {
+  const tbody = document.getElementById('alias-tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" class="a-name" placeholder="claude-opus-4-5" value="${esc(aName)}"
+      title="Name your client uses in the 'model' field"></td>
+    <td><input type="text" class="u-name" placeholder="same as left if blank = pass-through" value="${esc(uName)}"
+      list="models-datalist" title="Actual model name sent to the upstream provider"></td>
+    <td><input type="checkbox" class="a-def" ${isDef ? 'checked' : ''}
+      title="Use as fallback when no exact alias matches"></td>
+    <td><button class="rm" onclick="this.closest('tr').remove()" title="Remove row">×</button></td>
+  `;
+  tbody.appendChild(tr);
+  tr.querySelector('.a-def').addEventListener('change', function () {
+    if (this.checked)
+      document.querySelectorAll('#alias-tbody .a-def').forEach(c => { if (c !== this) c.checked = false; });
+  });
+  // Sync: when upstream name is filled, pre-fill anthropic name if still blank
+  const uInput = tr.querySelector('.u-name');
+  const aInput = tr.querySelector('.a-name');
+  uInput.addEventListener('blur', () => {
+    if (!aInput.value.trim() && uInput.value.trim()) aInput.value = uInput.value.trim();
+  });
+}
+
+function collectAliases() {
+  return [...document.querySelectorAll('#alias-tbody tr')].map(tr => ({
+    anthropic_name: tr.querySelector('.a-name').value.trim(),
+    upstream_name:  tr.querySelector('.u-name').value.trim(),
+    is_default:     tr.querySelector('.a-def').checked,
+  })).filter(a => a.anthropic_name);
+}
+
+// ── Test connection ───────────────────────────────────────────────────────────
+async function testConn() {
+  const url = document.getElementById('f-url').value.trim();
+  const key = document.getElementById('f-key').value.trim();
+  const eid = document.getElementById('eid').value;
+  if (!url) { toast('Enter a Base URL first', 'err'); return; }
+
+  const btn = document.getElementById('btn-test');
+  btn.textContent = '…';
+  btn.disabled = true;
+
+  const body = { base_url: url, api_key: key };
+  if (eid) body.provider_id = parseInt(eid);
+
+  try {
+    const r = await api('/api/test-connection', { method: 'POST', body: JSON.stringify(body) });
+    const el = document.getElementById('conn-status');
+    el.className = 'conn-status ' + (r.ok ? 'ok' : 'fail');
+    el.textContent = (r.ok ? '✓ ' : '✗ ') + r.message + (r.latency_ms ? ` (${r.latency_ms} ms)` : '');
+
+    // If models came back with the probe, stash them for the picker
+    if (r.ok && r.models && r.models.length) {
+      _fetchedModels = r.models;
+      document.getElementById('fetch-hint').textContent = `${r.models.length} models available — click "Fetch Models" to add them`;
+    }
+  } catch (e) {
+    const el = document.getElementById('conn-status');
+    el.className = 'conn-status fail';
+    el.textContent = '✗ Request failed: ' + e;
+  } finally {
+    btn.textContent = 'Test';
+    btn.disabled = false;
+  }
+}
+
+// ── Fetch models ──────────────────────────────────────────────────────────────
+async function fetchModels() {
+  const url = document.getElementById('f-url').value.trim();
+  const key = document.getElementById('f-key').value.trim();
+  const eid = document.getElementById('eid').value;
+  if (!url) { toast('Enter a Base URL first', 'err'); return; }
+
+  const btn = document.getElementById('btn-fetch');
+  btn.textContent = 'Fetching…';
+  btn.disabled = true;
+
+  const body = { base_url: url, api_key: key };
+  if (eid) body.provider_id = parseInt(eid);
+
+  try {
+    const r = await api('/api/fetch-models', { method: 'POST', body: JSON.stringify(body) });
+    if (!r.ok || !r.models || !r.models.length) {
+      toast(r.error || r.message || 'No models found — check URL and API key', 'err');
+      return;
+    }
+    _fetchedModels = r.models;
+    showModelPicker(r.models);
+    document.getElementById('fetch-hint').textContent = `${r.models.length} models found`;
+
+    // Also update connection status
+    const cs = document.getElementById('conn-status');
+    cs.className = 'conn-status ok';
+    cs.textContent = '✓ ' + r.message;
+  } finally {
+    btn.textContent = '↓ Fetch Models from API';
+    btn.disabled = false;
+  }
+}
+
+function showModelPicker(models) {
+  const list = document.getElementById('model-list');
+  const existing = new Set(
+    [...document.querySelectorAll('#alias-tbody .u-name')].map(i => i.value.trim()).filter(Boolean)
+  );
+  list.innerHTML = models.map(m => {
+    const alreadyAdded = existing.has(m);
+    return `<label class="model-item" title="${esc(m)}">
+      <input type="checkbox" class="mc" value="${esc(m)}" ${alreadyAdded ? 'disabled checked' : 'checked'}>
+      <span style="${alreadyAdded ? 'color:var(--muted)' : ''}">${esc(m)}${alreadyAdded ? ' <em style="font-size:.75em">(added)</em>' : ''}</span>
+    </label>`;
+  }).join('');
+  document.getElementById('model-picker').style.display = 'block';
+  updatePickerCount();
+  list.querySelectorAll('.mc').forEach(c => c.addEventListener('change', updatePickerCount));
+}
+
+function updatePickerCount() {
+  const n = document.querySelectorAll('.mc:checked:not(:disabled)').length;
+  document.getElementById('picker-count').textContent = n ? `${n} model(s) will be added` : '';
+}
+
+function addSelected() {
+  const checked = [...document.querySelectorAll('.mc:checked:not(:disabled)')].map(c => c.value);
+  const existingUpstream = new Set(
+    [...document.querySelectorAll('#alias-tbody .u-name')].map(i => i.value.trim())
+  );
+  let added = 0;
+  for (const m of checked) {
+    if (!existingUpstream.has(m)) {
+      addAliasRow(m, m, false);  // anthropic_name = upstream_name by default; user can rename
+      added++;
+    }
+  }
+  document.getElementById('model-picker').style.display = 'none';
+  if (added) toast(`Added ${added} alias${added > 1 ? 'es' : ''} — rename the left column if you want custom names`);
+  else toast('No new aliases added', 'err');
+}
+
+// Datalist for upstream model name field (populated after fetch)
+const dl = document.createElement('datalist');
+dl.id = 'models-datalist';
+document.body.appendChild(dl);
+
+function updateDatalist(models) {
+  dl.innerHTML = models.map(m => `<option value="${esc(m)}">`).join('');
+}
+
+// Watch for fetch so we update the datalist too
+const _origFetch = fetchModels;
+// No need to override; just call updateDatalist in showModelPicker
+const _origShow = showModelPicker;
+
+// ── Save provider ─────────────────────────────────────────────────────────────
+async function saveProvider() {
+  const id = document.getElementById('eid').value;
+  const nickname = document.getElementById('f-nick').value.trim();
+  const base_url = document.getElementById('f-url').value.trim();
+  const api_key  = document.getElementById('f-key').value.trim();
+  const aliases  = collectAliases();
+
+  if (!nickname) { toast('Nickname is required', 'err'); return; }
+  if (!base_url)  { toast('Base URL is required', 'err'); return; }
+
+  const payload = { nickname, base_url, api_key, aliases };
+  const r = id
+    ? await api(`/api/providers/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+    : await api('/api/providers',        { method: 'POST', body: JSON.stringify(payload) });
+
+  if (r.error) { toast(r.error, 'err'); return; }
+  toast(id ? 'Provider updated ✓' : 'Provider created ✓');
+  closeModal();
+  refresh();
+
+  // Refresh datalist with any newly added upstream models
+  updateDatalist(_fetchedModels);
+}
+
+// ── Regenerate key ────────────────────────────────────────────────────────────
+function confirmRegen() {
+  if (!confirm('Regenerate the virtual API key?\nThe old key will stop working immediately.')) return;
+  api('/api/key/regenerate', { method: 'POST' }).then(r => {
+    if (!r.key) { toast('Regen failed', 'err'); return; }
+    _apiKey = r.key;
+    document.getElementById('key-val').textContent = r.key;
+    document.getElementById('key-val').style.color = 'var(--accent)';
+    updateExportBlock();
+    document.getElementById('new-key-val').textContent = r.key;
+    document.getElementById('key-overlay').classList.remove('hidden');
+  });
+}
+
+function copyNewKey() {
+  navigator.clipboard.writeText(document.getElementById('new-key-val').textContent)
+    .then(() => toast('Key copied!'));
+}
+function dismissNewKey() {
+  document.getElementById('key-overlay').classList.add('hidden');
+}
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.getElementById('modal').classList.add('hidden');
+    document.getElementById('key-overlay').classList.add('hidden');
+  }
+});
+
+// ── Util ──────────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

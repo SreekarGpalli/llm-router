@@ -1,0 +1,45 @@
+[Unit]
+Description=LLM Router — Anthropic-compatible proxy with model-alias routing
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=llmrouter
+Group=llmrouter
+WorkingDirectory=/opt/llm-router
+EnvironmentFile=/opt/llm-router/.env
+ExecStart=/opt/llm-router/venv/bin/uvicorn main:app \
+    --host 127.0.0.1 \
+    --port ${PORT:-8000} \
+    --workers 1 \
+    --no-access-log \
+    --loop uvloop \
+    --http h11
+
+Restart=always
+RestartSec=5
+
+# Memory guardrail — systemd kills and restarts if RSS exceeds 400 MB.
+# This protects the 1 GB GCP e2-micro VM from OOM.
+MemoryMax=400M
+MemorySwapMax=512M
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/llm-router/data
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Output to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=llm-router
+
+[Install]
+WantedBy=multi-user.target
