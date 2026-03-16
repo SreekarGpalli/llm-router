@@ -61,6 +61,7 @@ from crypto import decrypt, encrypt
 from db import (
     delete_provider,
     generate_and_store_virtual_key,
+    get_passthrough_provider,
     get_provider,
     get_stats,
     get_virtual_key_plaintext,
@@ -215,18 +216,32 @@ async def v1_models(request: Request):
     if guard:
         return guard
     aliases = list_all_aliases()
-    return {
-        "object": "list",
-        "data": [
-            {
-                "id": a["anthropic_name"],
-                "object": "model",
-                "created": 1_700_000_000,
-                "owned_by": a["provider_nickname"],
-            }
-            for a in aliases
-        ],
-    }
+    data = [
+        {
+            "id": a["anthropic_name"],
+            "object": "model",
+            "created": 1_700_000_000,
+            "owned_by": a["provider_nickname"],
+        }
+        for a in aliases
+    ]
+
+    pt = get_passthrough_provider()
+    if pt:
+        existing_ids = {d["id"] for d in data}
+        api_key = decrypt(pt["api_key_enc"])
+        result = await _probe_upstream(pt["base_url"].rstrip("/"), api_key)
+        if result["ok"]:
+            for m in result["models"]:
+                if m not in existing_ids:
+                    data.append({
+                        "id": m,
+                        "object": "model",
+                        "created": 1_700_000_000,
+                        "owned_by": pt["nickname"],
+                    })
+
+    return {"object": "list", "data": data}
 
 
 # ── /v1/messages/count_tokens ─────────────────────────────────────────────────
@@ -666,8 +681,9 @@ async def api_provider_get(provider_id: int, request: Request):
     p = get_provider(provider_id)
     if not p:
         raise HTTPException(status_code=404, detail="Provider not found")
-    p.pop("api_key_enc", None)  # never send encrypted bytes to browser
+    p.pop("api_key_enc", None)
     p["aliases"] = list_aliases(provider_id)
+    p.setdefault("pass_through", 0)
     return p
 
 
@@ -682,13 +698,15 @@ async def api_provider_create(request: Request):
     api_key = (body.get("api_key") or "").strip()
     aliases = body.get("aliases") or []
 
+    pass_through = 1 if body.get("pass_through") else 0
+
     if not nickname:
         return JSONResponse({"error": "nickname is required"}, status_code=400)
     if not base_url:
         return JSONResponse({"error": "base_url is required"}, status_code=400)
 
     api_key_enc = encrypt(api_key) if api_key else ""
-    pid = create_provider(nickname, base_url, api_key_enc)
+    pid = create_provider(nickname, base_url, api_key_enc, pass_through)
     try:
         set_provider_aliases(pid, aliases)
     except ValueError as exc:
@@ -713,13 +731,14 @@ async def api_provider_update(provider_id: int, request: Request):
     nickname = (body.get("nickname") or existing["nickname"]).strip()
     base_url = (body.get("base_url") or existing["base_url"]).strip()
     enabled = int(body.get("enabled", existing["enabled"]))
+    pass_through = int(body.get("pass_through", existing.get("pass_through", 0)))
     aliases = body.get("aliases") or []
 
     # Only re-encrypt if a new key was provided; otherwise keep the stored enc value.
     new_key = (body.get("api_key") or "").strip()
     api_key_enc = encrypt(new_key) if new_key else existing["api_key_enc"]
 
-    update_provider(provider_id, nickname, base_url, api_key_enc, enabled)
+    update_provider(provider_id, nickname, base_url, api_key_enc, enabled, pass_through)
     try:
         set_provider_aliases(provider_id, aliases)
     except ValueError as exc:

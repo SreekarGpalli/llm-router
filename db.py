@@ -41,6 +41,7 @@ def init_db() -> None:
                 base_url    TEXT    NOT NULL,
                 api_key_enc TEXT    NOT NULL DEFAULT '',
                 enabled     INTEGER NOT NULL DEFAULT 1,
+                pass_through INTEGER NOT NULL DEFAULT 0,
                 created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -61,6 +62,13 @@ def init_db() -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS ux_alias_provider_name
                 ON aliases(provider_id, anthropic_name);
         """)
+        # Migration for existing databases: add pass_through column if missing.
+        try:
+            db.execute(
+                "ALTER TABLE providers ADD COLUMN pass_through INTEGER NOT NULL DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass  # column already exists
     db.close()
 
 
@@ -158,7 +166,7 @@ def verify_virtual_key(provided: str) -> bool:
 def list_providers() -> list[dict]:
     db = _conn()
     rows = db.execute("""
-        SELECT p.id, p.nickname, p.base_url, p.enabled,
+        SELECT p.id, p.nickname, p.base_url, p.enabled, p.pass_through,
                COUNT(a.id) AS alias_count
         FROM   providers p
         LEFT JOIN aliases a ON a.provider_id = p.id
@@ -176,12 +184,16 @@ def get_provider(provider_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
-def create_provider(nickname: str, base_url: str, api_key_enc: str) -> int:
+def create_provider(
+    nickname: str, base_url: str, api_key_enc: str, pass_through: int = 0,
+) -> int:
     db = _conn()
     with db:
+        if pass_through:
+            db.execute("UPDATE providers SET pass_through=0 WHERE pass_through=1")
         cur = db.execute(
-            "INSERT INTO providers(nickname,base_url,api_key_enc) VALUES(?,?,?)",
-            (nickname, base_url, api_key_enc),
+            "INSERT INTO providers(nickname,base_url,api_key_enc,pass_through) VALUES(?,?,?,?)",
+            (nickname, base_url, api_key_enc, pass_through),
         )
     pid = cur.lastrowid
     db.close()
@@ -194,12 +206,18 @@ def update_provider(
     base_url: str,
     api_key_enc: str,
     enabled: int,
+    pass_through: int = 0,
 ) -> None:
     db = _conn()
     with db:
+        if pass_through:
+            db.execute(
+                "UPDATE providers SET pass_through=0 WHERE pass_through=1 AND id!=?",
+                (provider_id,),
+            )
         db.execute(
-            "UPDATE providers SET nickname=?,base_url=?,api_key_enc=?,enabled=? WHERE id=?",
-            (nickname, base_url, api_key_enc, enabled, provider_id),
+            "UPDATE providers SET nickname=?,base_url=?,api_key_enc=?,enabled=?,pass_through=? WHERE id=?",
+            (nickname, base_url, api_key_enc, enabled, pass_through, provider_id),
         )
     db.close()
 
@@ -280,6 +298,21 @@ def set_provider_aliases(provider_id: int, aliases: list[dict]) -> None:
                     )
     finally:
         db.close()
+
+
+# ── Pass-through provider ─────────────────────────────────────────────────────
+
+def get_passthrough_provider() -> Optional[dict]:
+    """Return the first enabled pass-through provider, or None."""
+    db = _conn()
+    row = db.execute("""
+        SELECT * FROM providers
+        WHERE  pass_through = 1 AND enabled = 1
+        ORDER  BY id ASC
+        LIMIT  1
+    """).fetchone()
+    db.close()
+    return dict(row) if row else None
 
 
 # ── Alias resolution ──────────────────────────────────────────────────────────

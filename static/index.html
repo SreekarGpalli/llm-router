@@ -183,8 +183,8 @@ main{max-width:940px;margin:28px auto;padding:0 18px}
     loading…
   </div>
   <div style="font-size:.75rem;color:var(--muted);margin-top:6px">
-    ↑ Click to copy both as <code>export</code> statements for your shell.
-    Set <code>ANTHROPIC_BASE_URL</code> and <code>ANTHROPIC_API_KEY</code> before running <code>claude</code>.
+    ↑ Click to copy as <code>export</code> statements for your shell.
+    Set these before running <code>claude</code>. Uses <code>ANTHROPIC_AUTH_TOKEN</code> (not API_KEY) so Claude Code routes through this proxy.
   </div>
 </div>
 
@@ -235,6 +235,17 @@ main{max-width:940px;margin:28px auto;padding:0 18px}
         <label class="fl">API Key</label>
         <input id="f-key" type="password" placeholder="sk-...  (leave blank to keep existing on edit)">
         <div class="fhint">Stored Fernet-encrypted. Leave blank when editing to keep the current key.</div>
+      </div>
+
+      <div class="fg" style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="f-pt" style="width:auto">
+        <label for="f-pt" style="font-size:.84rem;color:var(--text);margin:0;text-transform:none;letter-spacing:0;cursor:pointer">
+          <strong>Pass-through</strong> — forward any unrecognized model name to this provider as-is
+        </label>
+      </div>
+      <div class="fhint" style="margin-top:-8px;margin-bottom:14px">
+        When enabled, models that don't match an explicit alias are sent to this provider with the original name.
+        Only one provider can be pass-through. Works like OpenRouter — accepts any <code>ANTHROPIC_MODEL</code> value.
       </div>
 
       <div style="display:flex;gap:8px;margin-bottom:4px;flex-wrap:wrap">
@@ -346,7 +357,7 @@ function updateExportBlock() {
   const key = _apiKey || '<your-api-key>';
   const ep = _endpoint || '<endpoint>';
   document.getElementById('export-block').textContent =
-    `export ANTHROPIC_BASE_URL=${ep}\nexport ANTHROPIC_API_KEY=${key}`;
+    `export ANTHROPIC_BASE_URL=${ep}\nexport ANTHROPIC_AUTH_TOKEN=${key}\nexport ANTHROPIC_API_KEY=""`;
 }
 
 async function loadStats() {
@@ -368,6 +379,7 @@ async function loadProviders() {
         <div class="prov-name">${esc(p.nickname)}</div>
         <div class="prov-url">${esc(p.base_url)}</div>
         <div class="prov-meta">${p.alias_count} alias${p.alias_count === 1 ? '' : 'es'}
+          ${p.pass_through ? ' · <span style="color:var(--accent)">pass-through</span>' : ''}
           ${p.enabled ? '' : ' · <span style="color:var(--yellow)">disabled</span>'}
         </div>
       </div>
@@ -426,6 +438,7 @@ function openModal(p = null) {
   document.getElementById('f-key').placeholder = p
     ? 'Leave blank to keep existing key'
     : 'sk-...  (required for most providers)';
+  document.getElementById('f-pt').checked = p ? !!p.pass_through : false;
   document.getElementById('conn-status').className = 'conn-status';
   document.getElementById('model-picker').style.display = 'none';
   document.getElementById('fetch-hint').textContent = '';
@@ -623,7 +636,8 @@ async function saveProvider() {
   if (!nickname) { toast('Nickname is required', 'err'); return; }
   if (!base_url)  { toast('Base URL is required', 'err'); return; }
 
-  const payload = { nickname, base_url, api_key, aliases };
+  const pass_through = document.getElementById('f-pt').checked;
+  const payload = { nickname, base_url, api_key, aliases, pass_through };
   const r = id
     ? await api(`/api/providers/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
     : await api('/api/providers',        { method: 'POST', body: JSON.stringify(payload) });

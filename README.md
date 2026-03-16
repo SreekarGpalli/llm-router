@@ -1,15 +1,15 @@
 # LLM Router
 
-A self-hosted proxy that sits between any Anthropic SDK client (Claude Code, Python SDK, any AI agent) and any OpenAI-compatible upstream provider. From the client'\''s perspective it looks exactly like Anthropic'\''s API. From the upstream'\''s perspective it looks like a normal OpenAI client. Everything in between ó authentication, routing, format translation, streaming ó is handled invisibly.
+A self-hosted proxy that sits between any Anthropic SDK client (Claude Code, Python SDK, any AI agent) and any OpenAI-compatible upstream provider. From the client'\''s perspective it looks exactly like Anthropic'\''s API. From the upstream'\''s perspective it looks like a normal OpenAI client. Everything in between ù authentication, routing, format translation, streaming ù is handled invisibly.
 
 ## What It Does
 
-- **Zero client-side changes** ó Point Claude Code or any Anthropic SDK at the router and it just works
-- **Multi-provider routing** ó Route different model names to different upstream providers
-- **Format translation** ó Automatically converts Anthropic API calls to OpenAI format and back
-- **Streaming support** ó Full SSE streaming with exact Anthropic event sequence
-- **Security** ó Two independent auth layers, encrypted API keys, timing-safe comparisons
-- **Tiny footprint** ó Runs on GCP'\''s free e2-micro (1 GB RAM) with headroom to spare
+- **Zero client-side changes** ù Point Claude Code or any Anthropic SDK at the router and it just works
+- **Multi-provider routing** ù Route different model names to different upstream providers
+- **Format translation** ù Automatically converts Anthropic API calls to OpenAI format and back
+- **Streaming support** ù Full SSE streaming with exact Anthropic event sequence
+- **Security** ù Two independent auth layers, encrypted API keys, timing-safe comparisons
+- **Tiny footprint** ù Runs on GCP'\''s free e2-micro (1 GB RAM) with headroom to spare
 
 ## Quick Start
 
@@ -36,20 +36,27 @@ Open your domain and add upstream providers (Groq, Together, OpenRouter, Ollama)
 
 ```bash
 export ANTHROPIC_BASE_URL=https://router.yourdomain.com/v1
-export ANTHROPIC_API_KEY=sk-router-...
+export ANTHROPIC_AUTH_TOKEN=sk-ant-router-...
+export ANTHROPIC_API_KEY=""
 ```
 
 ## Architecture
 
 ### Authentication
 
-- **Virtual API Key** ó Protects /v1/* endpoints. SHA-256 hash stored, Fernet for UI display.
-- **UI Session Cookie** ó HttpOnly, SameSite=Strict, 24-hour expiry using itsdangerous.TimestampSigner.
-- **Upstream Keys** ó Encrypted with Fernet, never stored in plaintext.
+- **Virtual API Key** ù Protects /v1/* endpoints. SHA-256 hash stored, Fernet for UI display.
+- **UI Session Cookie** ù HttpOnly, SameSite=Strict, 24-hour expiry using itsdangerous.TimestampSigner.
+- **Upstream Keys** ù Encrypted with Fernet, never stored in plaintext.
 
 ### Routing
 
-Model alias table in SQLite resolves incoming Anthropic model names to upstream OpenAI model names. Supports exact match and default fallback.
+Model alias table in SQLite resolves incoming Anthropic model names to upstream OpenAI model names.
+
+Resolution order:
+1. **Exact alias match** ó client model name matches a configured alias
+2. **Default alias** ó any alias marked `is_default` on an enabled provider
+3. **Pass-through provider** ó forwards the original model name as-is to a provider marked as pass-through (works like OpenRouter ó accepts any `ANTHROPIC_MODEL` value)
+4. **Error** with hints showing available aliases
 
 ### Translation
 
@@ -66,7 +73,7 @@ Runs on 1 GB RAM e2-micro:
 
 ### Network
 
-Zero exposed ports ó VM has no public IP. All traffic through Cloudflare Tunnel.
+Zero exposed ports ù VM has no public IP. All traffic through Cloudflare Tunnel.
 
 ## Tech Stack
 

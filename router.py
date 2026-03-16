@@ -5,7 +5,10 @@ Resolution order:
   1. Exact match on anthropic_name — prefer enabled provider, then lowest id.
      (Same alias CAN exist on multiple providers; enabled wins.)
   2. Any alias with is_default=1 on an enabled provider.
-  3. RouterError if nothing matched — message includes ALL configured alias names
+  3. Pass-through provider (pass_through=1) — forwards the original model name
+     as-is, like OpenRouter.  Allows any ANTHROPIC_MODEL value without explicit
+     alias configuration.
+  4. RouterError if nothing matched — message includes ALL configured alias names
      so the operator can immediately see what to set on the client side.
 
 Pass-through rule: if upstream_name is empty the incoming model name is
@@ -16,7 +19,7 @@ from __future__ import annotations
 from typing import Tuple
 
 from crypto import decrypt
-from db import list_alias_names, resolve_alias
+from db import get_passthrough_provider, list_alias_names, resolve_alias
 
 
 class RouterError(Exception):
@@ -35,6 +38,19 @@ def get_route(model_name: str) -> Tuple[dict, str]:
     alias = resolve_alias(model_name)
 
     if alias is None:
+        # Fall back to pass-through provider: forward the original model name.
+        pt = get_passthrough_provider()
+        if pt:
+            api_key = decrypt(pt["api_key_enc"])
+            return (
+                {
+                    "nickname": pt["nickname"],
+                    "base_url": pt["base_url"].rstrip("/"),
+                    "api_key": api_key,
+                },
+                model_name,
+            )
+
         names = list_alias_names()
         if names:
             sample = names[:6]
@@ -44,12 +60,14 @@ def get_route(model_name: str) -> Tuple[dict, str]:
             hint = (
                 f" Configured aliases: {shown}. "
                 "Add '{model_name}' as an alias in the LLM Router UI, "
-                "or mark one alias as the Default fallback."
+                "mark one alias as the Default fallback, "
+                "or enable Pass-through on a provider."
             ).replace("{model_name}", model_name)
         else:
             hint = (
                 " No aliases configured yet. "
-                "Open the LLM Router UI and add a provider with at least one alias."
+                "Open the LLM Router UI and add a provider with at least one alias, "
+                "or enable Pass-through on a provider."
             )
         raise RouterError(
             "invalid_request_error",
