@@ -102,7 +102,7 @@ def generate_and_store_virtual_key() -> str:
     """
     from crypto import encrypt  # local import avoids circular dependency
 
-    key = "sk-router-" + secrets.token_urlsafe(32)
+    key = "sk-ant-router-" + secrets.token_urlsafe(32)
     _persist_key(key)
     return key
 

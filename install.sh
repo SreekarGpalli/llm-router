@@ -130,18 +130,37 @@ fi
 # Create directories
 mkdir -p "$INSTALL_DIR" "$DATA_DIR" "$CF_DIR" "$INSTALL_DIR/static"
 
-# Copy files from current directory or download from repo
+# Copy files from current directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-if [[ -f "$SCRIPT_DIR/main.py" ]]; then
-    info "Copying files from $SCRIPT_DIR"
-    cp -r "$SCRIPT_DIR"/{main.py,db.py,translator.py,router.py,crypto.py,auth.py,requirements.txt} "$INSTALL_DIR/"
-    cp -r "$SCRIPT_DIR/static" "$INSTALL_DIR/"
-    [[ -f "$SCRIPT_DIR/llm-router.service" ]] && cp "$SCRIPT_DIR/llm-router.service" /etc/systemd/system/
-    [[ -f "$SCRIPT_DIR/cloudflared.service" ]] && cp "$SCRIPT_DIR/cloudflared.service" /etc/systemd/system/
-    success "Files copied from local directory"
-else
-    die "Cannot find application files. Run install.sh from the llm-router directory."
+
+# Pre-flight: verify all required files are present
+REQUIRED_FILES=(main.py db.py translator.py router.py crypto.py auth.py requirements.txt static/index.html)
+MISSING=()
+for f in "${REQUIRED_FILES[@]}"; do
+    [[ -f "$SCRIPT_DIR/$f" ]] || MISSING+=("$f")
+done
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    die "Missing required files in $SCRIPT_DIR: ${MISSING[*]}
+Make sure you committed everything including the static/ directory:
+  git add -A && git commit -m 'add all files' && git push"
 fi
+
+info "Copying files from $SCRIPT_DIR"
+
+# Copy every file individually so a missing optional file never aborts the script
+for f in main.py db.py translator.py router.py crypto.py auth.py requirements.txt; do
+    cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
+done
+
+# Copy static directory (recreate to ensure clean state)
+rm -rf "$INSTALL_DIR/static"
+cp -r "$SCRIPT_DIR/static" "$INSTALL_DIR/static"
+
+# Copy systemd units if present
+[[ -f "$SCRIPT_DIR/llm-router.service"   ]] && cp "$SCRIPT_DIR/llm-router.service"   /etc/systemd/system/
+[[ -f "$SCRIPT_DIR/cloudflared.service"  ]] && cp "$SCRIPT_DIR/cloudflared.service"   /etc/systemd/system/
+
+success "Files copied from $SCRIPT_DIR"
 
 # Python virtualenv
 python3.11 -m venv "$VENV"
@@ -176,7 +195,7 @@ read -rp "$(echo -e "${BOLD}Port${NC} [8000]: ")" PORT
 PORT="${PORT:-8000}"
 
 # Generate virtual API key
-VIRTUAL_KEY="sk-router-$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")"
+VIRTUAL_KEY="sk-ant-router-$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")"
 VIRTUAL_KEY_HASH=$(python3 -c "import hashlib; print(hashlib.sha256('$VIRTUAL_KEY'.encode()).hexdigest())")
 
 # Write .env
@@ -222,15 +241,21 @@ echo ""
 CF_CERT_DIR="$CF_DIR"
 mkdir -p "$CF_CERT_DIR"
 
-sudo -u "$SERVICE_USER" bash -c \
-    "HOME=$CF_CERT_DIR /usr/local/bin/cloudflared tunnel login --config $CF_DIR/config.yml" 2>&1 || true
+# cloudflared login does not accept --config; it always writes to ~/.cloudflared/cert.pem
+# Run as root so the cert lands in /root/.cloudflared/cert.pem
+/usr/local/bin/cloudflared tunnel login
 
-# If cert ended up in /root/.cloudflared, copy it
-if [[ -f "/root/.cloudflared/cert.pem" && ! -f "$CF_DIR/cert.pem" ]]; then
+# Copy cert to the app directory
+if [[ -f "/root/.cloudflared/cert.pem" ]]; then
     cp /root/.cloudflared/cert.pem "$CF_DIR/cert.pem"
+    success "Cloudflare cert copied to $CF_DIR/cert.pem"
+elif [[ -f "$HOME/.cloudflared/cert.pem" ]]; then
+    cp "$HOME/.cloudflared/cert.pem" "$CF_DIR/cert.pem"
+    success "Cloudflare cert copied to $CF_DIR/cert.pem"
 fi
+
 if [[ ! -f "$CF_DIR/cert.pem" ]]; then
-    warn "cert.pem not found in $CF_DIR — you may need to run:"
+    warn "cert.pem not found — you may need to run manually after install:"
     warn "  cloudflared tunnel login"
     warn "  cp ~/.cloudflared/cert.pem $CF_DIR/"
 fi
